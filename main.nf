@@ -13,7 +13,8 @@ params.ref = ""
 params.resource_vcf = ""
 params.chromosomes = "13"
 params.ploidy = 6
-params.output = "./result"
+params.output = "./results"
+params.max_gaussians = 4
 
 // ===================== Validation =====================
 if (!params.ref) exit 1, "Error: --ref is required"
@@ -60,23 +61,20 @@ workflow {
         | set { gt_out }
 
     // ========== 3. VQSR: Indels ==========
+    // Pass raw VCF through to ApplyVQSR via tuple
     gt_out.vcf
-        | map { t ->
-            def chr = t[0]
-            def vcf = t[1]
-            tuple(vcf, ref_fasta, ref_fai, ref_dict, chr as String, "INDEL", params.resource_vcf, ["QD", "DP", "FS", "SOR", "MQ"])
+        | map { chr, raw_vcf ->
+            tuple(raw_vcf, ref_fasta, ref_fai, ref_dict, chr as String, "INDEL", params.resource_vcf, ["QD", "DP", "FS", "SOR", "MQ"])
           }
         | VARIANT_RECALIBRATOR
-        | set { indel_recal_out }
+        | map { chr, recal, tranches, plots -> tuple(chr, recal, tranches) }
+        | set { indel_recal_data }
 
-    // ApplyVQSR for Indels
-    indel_recal_out.recal_data
-        | map { t ->
-            def chr = t[0]
-            def recal = t[1]
-            def tranches = t[2]
-            def vcf = file("Chr${chr}.raw.vcf.gz")
-            tuple(vcf, recal, tranches, chr, "INDEL")
+    // Join recal data with raw VCF
+    indel_recal_data
+        | join(gt_out.vcf.map { chr, vcf -> tuple(chr, vcf) }, remainder: false)
+        | map { chr, recal_data, raw_vcf ->
+            tuple(raw_vcf, recal_data[0], recal_data[1], chr, "INDEL")
           }
         | APPLY_VQSR
         | set { indel_out }
@@ -88,16 +86,17 @@ workflow {
             tuple(vcf, ref_fasta, ref_fai, ref_dict, chr, "SNP", params.resource_vcf, ["QD", "DP", "FS", "SOR", "MQ"])
           }
         | VARIANT_RECALIBRATOR_SNP
-        | set { snp_recal_out }
+        | map { chr, recal, tranches, plots -> tuple(chr, recal, tranches) }
+        | set { snp_recal_data }
 
-    // ApplyVQSR for SNPs
-    snp_recal_out.recal_data
-        | map { t ->
-            def chr = t[0]
-            def recal = t[1]
-            def tranches = t[2]
-            def vcf = file("Chr${chr}.raw.indel.recal.vcf.gz")
-            tuple(vcf, recal, tranches, chr, "SNP")
+    // Join SNP recal data with indel-filtered VCF
+    snp_recal_data
+        | join(indel_out.vcf.map { vcf -> 
+            def chr = vcf.name.replaceAll(".*Chr([0-9]+).*", "\$1")
+            tuple(chr as String, vcf) 
+        }, remainder: false)
+        | map { chr, recal_data, filtered_vcf ->
+            tuple(filtered_vcf, recal_data[0], recal_data[1], chr, "SNP")
           }
         | APPLY_VQSR_SNP
         | set { final_vcfs }
