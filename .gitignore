@@ -1,0 +1,23 @@
+# Nextflow
+.nextflow*
+work/
+.cache/
+
+# Test/intermediate output
+test/
+test_modules.nf
+test_gvcf_list.txt
+gvcfs/
+raw_vcfs/
+result/
+results/
+
+# Flowchart
+flowchart.dot
+flowchart.png
+
+# Interval lists
+core_chr*.list
+
+# System
+.qwen/
