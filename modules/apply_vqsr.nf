@@ -13,6 +13,15 @@ process APPLY_VQSR {
     script:
     def mem_gb = Math.max(task.memory.toGiga() - 4, 2)
     """
+    # Index VCF if needed
+    if [ ! -f "${vcf}.tbi" ] && [ ! -f "${vcf}.idx" ]; then
+        gatk IndexFeatureFile -I ${vcf}
+    fi
+    # Index recal file if needed
+    if [ ! -f "${recal}.tbi" ] && [ ! -f "${recal}.idx" ]; then
+        gatk IndexFeatureFile -I ${recal}
+    fi
+
     gatk --java-options "-Xmx${mem_gb}g" ApplyVQSR \\
         -V ${vcf} \\
         --recal-file ${recal} \\

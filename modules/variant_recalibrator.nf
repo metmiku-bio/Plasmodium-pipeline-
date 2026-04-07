@@ -10,8 +10,9 @@ process VARIANT_RECALIBRATOR {
     tuple val(chr), path("*.recal"), path("*.tranches"), path("*.plots.R"), emit: recal_data
 
     script:
+    // max_gaussians: use the param value (default 4).
+    // For small/regional datasets that fail to converge, pass --max_gaussians 1 on the CLI.
     def max_gaussians = params.max_gaussians ?: 4
-    def annot_args = annotations.join(" -an ")
     def mem_gb = Math.max(task.memory.toGiga() - 4, 2)
     """
     # Index input VCF if needed
@@ -27,13 +28,12 @@ process VARIANT_RECALIBRATOR {
         -R ${ref_fasta} \\
         -V ${vcf} \\
         --trust-all-polymorphic \\
-        -an ${annot_args} \\
+        -an QD -an DP -an FS -an SOR -an MQ \\
         -mode ${mode} \\
         --max-gaussians ${max_gaussians} \\
         --resource:Brown,known=true,training=true,truth=true,prior=15.0 ${resource_vcf} \\
         -O Chr${chr}.raw.${mode.toLowerCase()}.recal \\
         --tranches-file Chr${chr}.raw.${mode.toLowerCase()}.tranches \\
-        --rscript-file Chr${chr}.raw.${mode.toLowerCase()}.plots.R \\
-        --dont-run-rscript
+        --rscript-file Chr${chr}.raw.${mode.toLowerCase()}.plots.R
     """
 }

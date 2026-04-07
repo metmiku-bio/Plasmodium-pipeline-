@@ -1,18 +1,18 @@
 process GENOMICSDB_IMPORT {
     tag { "chr${chr}" }
 
+    publishDir "${params.output ?: '.'}/genomicsdb", mode: 'copy'
+
     input:
-    val chr
-    path gvcf_files
-    path interval_list
+    tuple val(chr), path(gvcf_list), path(interval_list)
 
     output:
-    tuple val(chr), path("chr${chr}_database"), emit: database
+    tuple val(chr), path("chr${chr}_database"), path(interval_list), emit: database
 
     script:
     def threads = params.db_import_threads ?: 24
-    def mem_gb = Math.min(task.memory.toGiga() - 4, 36)
-    def gvcf_args = gvcf_files.collect { "--variant $it" }.join(" ")
+    def mem_gb = Math.max(task.memory.toGiga() - 4, 2)
+    def gvcf_args = gvcf_list.collect { "--variant $it" }.join(" ")
     """
     gatk --java-options "-Xmx${mem_gb}G" GenomicsDBImport \\
         $gvcf_args \\

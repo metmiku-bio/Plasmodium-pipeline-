@@ -1,23 +1,25 @@
 process GATHER_VCFS {
     tag { "chr${chr}" }
 
+    publishDir "${params.output ?: '.'}/raw_vcfs", mode: 'copy'
+
     input:
-    path vcf_list
-    path ref_fasta
-    val chr
+    tuple val(chr), path(vcf_list), path(ref_fasta), path(ref_fai), path(ref_dict)
 
     output:
-    path "Chr${chr}.raw.vcf.gz", emit: vcf
-    path "Chr${chr}.raw.vcf.gz.tbi", emit: vcf_idx
+    tuple val(chr), path("Chr${chr}.raw.vcf.gz"), emit: vcf
+    tuple val(chr), path("Chr${chr}.raw.vcf.gz.tbi"), emit: vcf_idx
 
     script:
+    def mem_gb = Math.max(task.memory.toGiga() - 4, 2)
+    def vcf_args = vcf_list.collect { "-V $it" }.join(" ")
     """
-    gatk --java-options "-Xmx${task.memory.toGiga() - 4}G" GatherVcfs \\
+    gatk --java-options "-Xmx${mem_gb}G" GatherVcfs \\
         -R ${ref_fasta} \\
-        -I ${vcf_list} \\
+        $vcf_args \\
         -O Chr${chr}.raw.vcf.gz \\
         --CREATE_INDEX true
-    
-    tabix -p vcf Chr${chr}.raw.vcf.gz
+
+    tabix -p vcf -f Chr${chr}.raw.vcf.gz
     """
 }
