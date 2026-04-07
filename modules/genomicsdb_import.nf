@@ -1,21 +1,22 @@
 process GENOMICSDB_IMPORT {
     tag { "chr${chr}" }
 
-    publishDir "${params.output ?: '.'}/genomicsdb", mode: 'copy'
+    // GenomicsDB workspaces are intermediate directories — not published
+    // (they are consumed by GENOTYPE_GVCF and not needed as final outputs)
 
     input:
-    tuple val(chr), path(gvcf_list), path(interval_list)
+    // sample_map: path to a two-column TSV  <sample_name>\t<gvcf_path>
+    tuple val(chr), path(sample_map), path(gvcfs), path(gvcf_tbis), path(interval_list)
 
     output:
     tuple val(chr), path("chr${chr}_database"), path(interval_list), emit: database
 
     script:
     def threads = params.db_import_threads ?: 24
-    def mem_gb = Math.max(task.memory.toGiga() - 4, 2)
-    def gvcf_args = gvcf_list.collect { "--variant $it" }.join(" ")
+    def mem_gb  = Math.max(task.memory.toGiga() - 4, 2)
     """
     gatk --java-options "-Xmx${mem_gb}G" GenomicsDBImport \\
-        $gvcf_args \\
+        --sample-name-map ${sample_map} \\
         --genomicsdb-workspace-path chr${chr}_database \\
         --intervals ${interval_list} \\
         --batch-size 100 \\
