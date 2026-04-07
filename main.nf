@@ -79,7 +79,7 @@ workflow {
         | combine(windows_out.whole)          // [prefix, bam] × [chr, whole.list]
         | map { prefix, bam, chr, interval ->
             def bai = file("${bam}".replaceAll(/\.bam$/, ".bai"))
-            tuple(prefix, chr as int, bam, bai, ref_fasta, ref_fai, ref_dict, interval)
+            tuple(prefix, chr.toString(), bam, bai, ref_fasta, ref_fai, ref_dict, interval)
           }
         | HAPLOTYPE_CALLER
         | set { hc_out }
@@ -90,7 +90,7 @@ workflow {
     hc_out.gvcf
         | map { prefix, chr, gvcf ->
             def tbi = file("${gvcf}.tbi")
-            tuple(chr, prefix, gvcf, tbi)
+            tuple(chr.toString(), prefix, gvcf, tbi)
           }
         | groupTuple()
         | join( windows_out.windows )          // attach chr<N>_windows.list

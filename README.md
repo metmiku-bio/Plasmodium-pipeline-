@@ -144,7 +144,7 @@ nextflow run main.nf -resume \
 
 ```bash
 # Local (default)
-nextflow run main.nf -profile standard ...
+nextflow run main.nf -profile server ...
 
 # HPC (SLURM)
 nextflow run main.nf -profile hpc ...
@@ -213,3 +213,6 @@ results/
 | bedtools | 2.29+ *(Mode B only)* |
 | samtools | 1.10+ |
 | bgzip / tabix | htslib 1.10+ |
+
+### The main code used to run in the server
+nextflow run main.nf --bam "../bam_2/*.bqsr.bam" --ref ~/plasmodium_falciparum/Pfalciparum.genome.fasta --resource_vcf ~/plasmodium_falciparum/3d7_hb3.combined.final.vcf.gz --ploidy 6 --chromosomes "13" --output ../result_pipeline/ -profile server  -resume --intervals_dir ./intervals
