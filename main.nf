@@ -193,7 +193,7 @@ workflow {
         | set { final_vcfs }
 
     // ========== 7. Gather all chromosomes into one VCF ==========
-    final_vcfs
+    final_vcfs.vcf
         | map { chr, vcf -> vcf }
         | collect
         | map { vcfs -> tuple("all", vcfs, ref_fasta, ref_fai, ref_dict) }
@@ -206,6 +206,7 @@ workflow {
         // ========== 8. PCA Analysis on SNPs ==========
         combined_vcf_out
             | combine(channel.of(metadata))
+            | map { vcf, meta -> [vcf, meta] }
             | PCA
     }
 
