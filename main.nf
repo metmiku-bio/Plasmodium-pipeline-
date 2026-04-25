@@ -9,6 +9,8 @@ include { VARIANT_RECALIBRATOR }                               from './modules/v
 include { APPLY_VQSR }                                         from './modules/apply_vqsr'
 include { VARIANT_RECALIBRATOR as VARIANT_RECALIBRATOR_SNP }   from './modules/variant_recalibrator'
 include { APPLY_VQSR as APPLY_VQSR_SNP }                       from './modules/apply_vqsr'
+include { GATHER_ALL_VCFS }                                    from './modules/gather_all_vcfs'
+include { PCA }                                                from './modules/pca'
 
 // ===================== Parameters =====================
 params.bam               = "*.bam"
@@ -21,8 +23,10 @@ params.intervals_dir     = ""           // optional: path to dir with core_chr<N
 params.num_genome_chunks = 100          // MODE B only: number of equal windows per chromosome
                                         //   ignored when --intervals_dir is set (the list file IS the windows)
 params.ploidy            = 6
+params.run_pca          = false
 params.output            = "./results"
 params.max_gaussians     = 4
+params.metadata          = ""
 
 // ===================== Validation =====================
 if (!params.ref)          exit 1, "Error: --ref is required"
@@ -187,6 +191,23 @@ workflow {
           }
         | APPLY_VQSR_SNP
         | set { final_vcfs }
+
+    // ========== 7. Gather all chromosomes into one VCF ==========
+    final_vcfs
+        | map { chr, vcf -> vcf }
+        | collect
+        | map { vcfs -> tuple("all", vcfs, ref_fasta, ref_fai, ref_dict) }
+        | GATHER_ALL_VCFS
+        | set { combined_vcf_out }
+
+    if (params.run_pca) {
+        def metadata = file(params.metadata)
+
+        // ========== 8. PCA Analysis on SNPs ==========
+        combined_vcf_out
+            | combine(channel.of(metadata))
+            | PCA
+    }
 
     // ========== Progress logging ==========
     hc_out.gvcf.subscribe { t ->
