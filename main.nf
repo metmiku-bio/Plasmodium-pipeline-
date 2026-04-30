@@ -28,12 +28,23 @@ params.output            = "./results"
 params.max_gaussians     = 4
 params.metadata          = ""
 
+// PCA-only parameters 
+params.vcf               = ""           // Input VCF for PCA-only mode
+params.pc_count          = 10           // Number of principal components
+params.color_by          = "country"    // Column for coloring
+params.label_by          = ""           // Column for labels
+params.shape_by          = ""           // Column for shapes
+params.plink_memory      = 8000         // Memory for PLINK
+
+// Workflow selection parameter
+params.workflow          = "full"       // Options: "full", "pca", "both"
+
 // ===================== Validation =====================
-if (!params.ref)          exit 1, "Error: --ref is required"
-if (!params.resource_vcf) exit 1, "Error: --resource_vcf is required for VQSR"
 
 // ===================== Main Workflow =====================
-workflow {
+workflow FULL_PIPELINE  {
+    if (!params.ref)          exit 1, "Error: --ref is required"
+    if (!params.resource_vcf) exit 1, "Error: --resource_vcf is required for VQSR"
 
     // ---- Reference files ----
     def ref_fasta = file(params.ref)
@@ -200,16 +211,6 @@ workflow {
         | GATHER_ALL_VCFS
         | set { combined_vcf_out }
 
-    if (params.run_pca) {
-        def metadata = file(params.metadata)
-
-        // ========== 8. PCA Analysis on SNPs ==========
-        combined_vcf_out
-            | combine(channel.of(metadata))
-            | map { vcf, meta -> [vcf, meta] }
-            | PCA
-    }
-
     // ========== Progress logging ==========
     hc_out.gvcf.subscribe { t ->
         if (t && t[2]) log.info "gVCF produced:          ${t[2].name}"
@@ -225,5 +226,111 @@ workflow {
     }
     final_vcfs.vcf.subscribe { vcf ->
         if (vcf) log.info "Final SNP recal VCF:    ${vcf.name}"
+    }
+
+}
+
+workflow PCA_ONLY {
+    
+    log.info "=========================================="
+    log.info "RUNNING PCA-ONLY ANALYSIS"
+    log.info "Input VCF:      ${params.vcf}"
+    log.info "Metadata:       ${params.metadata}"
+    log.info "Output dir:     ${params.output}/pca"
+    log.info "PCs to compute: ${params.pc_count}"
+    log.info "=========================================="
+    
+    // Validate required parameters
+    if (!params.vcf)          exit 1, "Error: --vcf is required for PCA workflow"
+    if (!params.metadata)     exit 1, "Error: --metadata is required for PCA workflow"
+    
+    // Create input channel and run PCA
+    channel.of([file(params.vcf), file(params.metadata), params.color_by, params.label_by, params.shape_by, params.pc_count, params.plink_memory])
+        | PCA
+    
+    log.info "✓ PCA analysis completed. Results in: ${params.output}/pca"
+}
+
+/*
+ * WORKFLOW: Both Full Pipeline and PCA
+ * Runs full pipeline then automatically runs PCA on the result
+ */
+workflow BOTH {
+    
+    log.info "=========================================="
+    log.info "RUNNING FULL PIPELINE + PCA"
+    log.info "=========================================="
+    
+    // Run full pipeline
+    FULL_PIPELINE()
+    
+    // Then run PCA on the combined VCF
+    // Write the combined VCF to a known location first
+    FULL_PIPELINE.out.combined_vcf
+        | map { vcf ->
+            // Ensure VCF is indexed
+            def vcf_path = vcf.toString()
+            def vcf_idx = vcf_path + ".tbi"
+            
+            if (!file(vcf_idx).exists()) {
+                log.info "Indexing VCF: ${vcf_path}"
+                "bcftools index ${vcf_path}"
+            }
+            
+            return vcf_path
+          }
+        | map { vcf_path ->
+            // Create a temporary config for PCA
+            def pca_params = [
+                vcf: vcf_path,
+                metadata: params.metadata,
+                output: "${params.output}/pca",
+                pc_count: params.pc_count,
+                color_by: params.color_by,
+                label_by: params.label_by,
+                shape_by: params.shape_by,
+                plink_memory: params.plink_memory,
+                workflow: "pca"
+            ]
+            
+            // Call PCA_ONLY workflow with these parameters
+            // Note: This requires Nextflow 22.10+ or using workflow composition
+            log.info "Starting PCA on: ${vcf_path}"
+            
+            // Alternative: directly run PCA process
+            channel.of([file(vcf_path), file(params.metadata), params.color_by, params.label_by, params.shape_by, params.pc_count, params.plink_memory])
+                | PCA
+          }
+        | println
+    
+    log.info "✓ Full pipeline and PCA analysis completed"
+}
+
+// ===================== Main Entry Point =====================
+/*
+ * Main workflow selector
+ * Routes to the appropriate workflow based on params.workflow
+ */
+workflow {
+    
+    // Display workflow selection
+    log.info "=========================================="
+    log.info "WORKFLOW SELECTION: ${params.workflow.toUpperCase()}"
+    log.info "=========================================="
+    
+    // Route to appropriate workflow
+    if (params.workflow == "full") {
+        FULL_PIPELINE()
+        
+    } else if (params.workflow == "pca") {
+        PCA_ONLY()
+        
+    } else if (params.workflow == "both") {
+        BOTH()
+        
+    } else {
+        log.error "Invalid workflow selection: ${params.workflow}"
+        log.error "Valid options: 'full', 'pca', 'both'"
+        exit 1
     }
 }
